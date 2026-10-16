@@ -1,0 +1,40 @@
+# Freigabe-Bot als GitHub Action – ersetzt den Mini-PC.
+# Gehört ins Daten-Repo (regiokauf-daten) unter .github/workflows/freigabe.yml,
+# freigabe_bot.py liegt dort im Hauptordner.
+# Benötigte Repo-Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_CHAT_ID
+name: Freigabe-Bot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # alle 5 Minuten (GitHub verzögert das manchmal um einige Minuten)
+  workflow_dispatch: {}       # zusätzlich: Knopf "Run workflow" für sofortige Freigabe
+
+concurrency:
+  group: freigabe
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  freigabe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Klicks aus Telegram verarbeiten
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          DATA_FILE: betriebe.json
+        run: python freigabe_bot.py --once
+      - name: Neue Betriebe veröffentlichen
+        run: |
+          git config user.name "regiokauf-bot"
+          git config user.email "regiokauf-bot@users.noreply.github.com"
+          [ -f betriebe.json ] || exit 0
+          git add betriebe.json
+          git diff --cached --quiet || (git commit -m "Betrieb freigegeben" && git push)

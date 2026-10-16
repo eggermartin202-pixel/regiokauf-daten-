@@ -102,11 +102,9 @@ def save_list(entries: list[dict]) -> None:
     DATA_FILE.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def push_to_github(entries: list[dict]) -> str:
-    """Lädt betriebe.json in ein (öffentliches) GitHub-Repo, damit die App sie abrufen kann."""
-    if not (GITHUB_TOKEN and GITHUB_REPO):
-        return "nur lokal gespeichert (GitHub nicht eingerichtet)"
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
+def github_put(path: str, content: bytes, message: str) -> None:
+    """Legt eine Datei im (öffentlichen) GitHub-Repo an oder ersetzt sie."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
 
     sha = None
@@ -117,15 +115,41 @@ def push_to_github(entries: list[dict]) -> str:
         if e.code != 404:
             raise
 
-    body = {
-        "message": "Betriebe-Liste aktualisiert",
-        "content": base64.b64encode(json.dumps(entries, ensure_ascii=False, indent=2).encode()).decode(),
-    }
+    body = {"message": message, "content": base64.b64encode(content).decode()}
     if sha:
         body["sha"] = sha
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="PUT")
-    urllib.request.urlopen(req, timeout=20).close()
+    urllib.request.urlopen(req, timeout=30).close()
+
+
+def push_to_github(entries: list[dict], fotos: list[str]) -> str:
+    """Lädt Fotos und betriebe.json hoch, damit die App sie abrufen kann.
+    Bei GitHub Actions nicht nötig: dort speichert der Workflow selbst (git commit)."""
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return "gespeichert"
+    folder = GITHUB_PATH.rpartition("/")[0]
+    for rel in fotos:
+        github_put(f"{folder}/{rel}" if folder else rel, (DATA_FILE.parent / rel).read_bytes(), "Foto hinzugefügt")
+    github_put(GITHUB_PATH, json.dumps(entries, ensure_ascii=False, indent=2).encode(), "Betriebe-Liste aktualisiert")
     return "online veröffentlicht"
+
+
+def download_fotos(betrieb: dict) -> list[str]:
+    """Holt die Fotos (Telegram-Datei-IDs) und legt sie neben betriebe.json in fotos/.
+    Liefert die Pfade relativ zu betriebe.json, so wie die App sie erwartet."""
+    paths = []
+    folder = DATA_FILE.parent / "fotos"
+    for i, file_id in enumerate(betrieb.get("fotoIds", [])[:3], start=1):
+        file_path = tg("getFile", file_id=file_id)["result"]["file_path"]
+        with urllib.request.urlopen(f"https://api.telegram.org/file/bot{TOKEN}/{file_path}", timeout=60) as r:
+            data = r.read()
+        if not data.startswith(b"\xff\xd8"):  # nur echte JPEGs übernehmen
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        name = f"{betrieb['id']}-{i}.jpg"
+        (folder / name).write_bytes(data)
+        paths.append(f"fotos/{name}")
+    return paths
 
 
 # --------------------------------------------------------------------------- Klicks
@@ -147,13 +171,20 @@ def handle_callback(cb: dict) -> None:
         return
 
     if action == "ok":
+        try:
+            fotos = download_fotos(betrieb)
+        except Exception as e:  # noqa: BLE001 – Betrieb trotzdem freigeben, nur ohne Fotos
+            print("Fotos nicht ladbar:", e, file=sys.stderr, flush=True)
+            fotos = []
+        betrieb.pop("fotoIds", None)
+        betrieb["fotos"] = fotos
         entries = upsert(load_list(), betrieb)
         save_list(entries)
         try:
-            where = push_to_github(entries)
+            where = push_to_github(entries, fotos)
         except Exception as e:  # noqa: BLE001 – Fehler dem Admin zeigen statt abstürzen
             where = f"lokal gespeichert, GitHub-Upload fehlgeschlagen: {e}"
-        status = f"✅ Freigegeben ({where})"
+        status = f"✅ Freigegeben ({where}, {len(fotos)} Foto(s))"
     else:
         status = "❌ Abgelehnt"
 

@@ -3,6 +3,7 @@
 Hier liegt die Liste der **freigegebenen heimischen Betriebe** für die RegioKauf-App.
 
 - `betriebe.json` – wird automatisch gepflegt, nicht von Hand bearbeiten
+- `fotos/` – Fotos der freigegebenen Betriebe
 - `freigabe_bot.py` – holt deine ✅/❌-Klicks aus Telegram ab
 - `.github/workflows/freigabe.yml` – startet den Bot alle 5 Minuten (kostenlos über GitHub Actions)
 

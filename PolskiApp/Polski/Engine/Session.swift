@@ -107,7 +107,7 @@ enum SessionPlanner {
 
         let practice = all
             .filter { progress[$0.id] != nil }
-            .sorted { (progress[$0.id]?.mastery ?? 0) < (progress[$0.id]?.mastery ?? 0) }
+            .sorted { (progress[$0.id]?.mastery ?? 0) < (progress[$1.id]?.mastery ?? 0) }
 
         switch mode {
         case .review:
@@ -120,7 +120,7 @@ enum SessionPlanner {
         case .focus(let tags):
             let inTags = all.filter { tags.contains($0.tag) }
             let seen = inTags.filter { progress[$0.id] != nil }
-                .sorted { (progress[$0.id]?.mastery ?? 0) < (progress[$0.id]?.mastery ?? 0) }
+                .sorted { (progress[$0.id]?.mastery ?? 0) < (progress[$1.id]?.mastery ?? 0) }
             let unseen = inTags.filter { progress[$0.id] == nil }
                 .sorted { abs($0.difficulty - state.rating) < abs($1.difficulty - state.rating) }
             var entries = seen.prefix(9).map { Entry(item: $0, isIntro: false) }

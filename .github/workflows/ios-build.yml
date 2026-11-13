@@ -1,0 +1,36 @@
+# Prüft, ob die Korn-App (ios/Korn) kompiliert. Läuft nur bei Änderungen an der App.
+name: iOS Build
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode-Projekt erzeugen
+        run: |
+          brew install xcodegen
+          cd ios/Korn && xcodegen generate
+      - name: Für den Simulator bauen
+        run: |
+          cd ios/Korn
+          set +e
+          xcodebuild -project Korn.xcodeproj -target Korn -sdk iphonesimulator \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
+          status=$?
+          grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -150
+          exit $status

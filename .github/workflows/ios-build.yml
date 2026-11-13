@@ -1,4 +1,4 @@
-# Prüft, ob die Korn-App (ios/Korn) kompiliert. Läuft nur bei Änderungen an der App.
+# Baut die Korn-App (ios/Korn) und legt eine unsignierte IPA zum Sideloaden ab. Läuft nur bei Änderungen an der App.
 name: iOS Build
 
 on:
@@ -25,12 +25,22 @@ jobs:
         run: |
           brew install xcodegen
           cd ios/Korn && xcodegen generate
-      - name: Für den Simulator bauen
+      - name: Für das iPhone bauen (unsigniert)
         run: |
           cd ios/Korn
           set +e
-          xcodebuild -project Korn.xcodeproj -target Korn -sdk iphonesimulator \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
+          xcodebuild -project Korn.xcodeproj -target Korn -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
           status=$?
           grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -150
           exit $status
+      - name: IPA packen
+        run: |
+          cd ios/Korn/build/Release-iphoneos
+          mkdir Payload && cp -R Korn.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/Korn-unsigniert.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Korn-unsigniert
+          path: Korn-unsigniert.ipa
+          retention-days: 30
